@@ -1,0 +1,101 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Rfp {
+  id               String      @id @default(uuid())
+  title            String
+  description      String
+  budget           Float?
+  currency         String?
+  delivery_deadline DateTime?
+  payment_terms    String?
+  warranty_terms   String?
+  status           String      @default("DRAFT")
+  created_at       DateTime    @default(now())
+  updated_at       DateTime    @updatedAt
+
+  items      RfpItem[]
+  proposals  Proposal[]
+  rfpVendors RfpVendor[]
+}
+
+model RfpItem {
+  id         String   @id @default(uuid())
+  name       String
+  quantity   Int
+  specs_json Json
+
+  rfp_id String
+  rfp    Rfp @relation(fields: [rfp_id], references: [id], onDelete: Cascade)
+}
+
+model Vendor {
+  id           String    @id @default(uuid())
+  name         String
+  contact_name String?
+  email        String    @unique
+  phone        String?
+  metadata     Json?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  rfpVendors RfpVendor[]
+  proposals  Proposal[]
+}
+
+model RfpVendor {
+  id        String   @id @default(uuid())
+  status    String   @default("INVITED")
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  invite_email_message_id String?
+
+  rfp_id    String
+  vendor_id String
+
+  rfp    Rfp    @relation(fields: [rfp_id], references: [id], onDelete: Cascade)
+  vendor Vendor @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+
+  @@unique([rfp_id, vendor_id])
+}
+
+model Proposal {
+  id              String   @id @default(uuid())
+  raw_email_id    String?
+  raw_email_body  String?
+
+  total_price     Float?
+  currency        String?
+  delivery_days   Int?
+  payment_terms   String?
+  warranty_terms  String?
+  notes           String?
+
+  score_overall   Float?
+  score_price     Float?
+  score_terms     Float?
+  score_risk      Float?
+  ai_evaluation_summary String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  rfp_id    String
+  vendor_id String
+
+  rfp    Rfp    @relation(fields: [rfp_id], references: [id], onDelete: Cascade)
+  vendor Vendor @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+
+  @@unique([rfp_id, vendor_id])
+}
+
