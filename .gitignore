@@ -1,0 +1,61 @@
+# === Node Modules ===
+node_modules/
+**/node_modules/
+
+# === Build Output ===
+dist/
+build/
+.out/
+.next/
+coverage/
+.temp/
+
+# === Environment ===
+.env
+.env.*
+!.env.example   # allow the example template
+
+# === Logs ===
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+*.log
+*.log.*
+
+# === Prisma ===
+prisma/migrations/dev.db
+prisma/dev.db
+prisma/*.db-journal
+
+# === Database Files (if SQLite local) ===
+*.sqlite
+*.sqlite-journal
+
+# === TypeScript ===
+*.tsbuildinfo
+
+# === Local runtime ===
+.DS_Store
+Thumbs.db
+
+# === Vite ===
+frontend/.vite
+frontend/.vite-cache
+
+# === React ===
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+
+# === Backend ===
+backend/node_modules/
+backend/dist/
+backend/build/
+
+# === IDE / Editor ===
+.vscode/
+.idea/
+*.swp
+*.swo
