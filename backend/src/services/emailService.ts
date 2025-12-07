@@ -98,21 +98,14 @@ export async function pollInbox() {
 
   const connection = await imaps.connect(config);
 
-  // 🔍 1) List mailboxes once (optional, just to see names)
-  const boxes = await connection.getBoxes();
-  console.log("[pollInbox] Mailboxes:", Object.keys(boxes));
+  // You can switch this back to "INBOX" later if you want
+  await connection.openBox("[Gmail]/All Mail");
 
-  // 🔄 2) For Gmail, use All Mail folder for debugging:
-  // await connection.openBox("INBOX");               // original
-  await connection.openBox("[Gmail]/All Mail");      // 👈 debug: search ALL mail
-
-  // 🔍 3) Use ALL instead of UNSEEN for now
-  const searchCriteria = ["ALL"]; // later you can change back to ["UNSEEN"]
-
+  const searchCriteria = ["ALL"]; // or ["UNSEEN"] once you're happy
   const fetchOptions = {
     bodies: ["HEADER.FIELDS (FROM TO SUBJECT)", "TEXT"],
     struct: true,
-    markSeen: false, // don't change read state while debugging
+    markSeen: false,
   };
 
   const messages = await connection.search(searchCriteria, fetchOptions);
@@ -126,18 +119,13 @@ export async function pollInbox() {
         p.which?.startsWith("HEADER")
       );
       const textPart = msg.parts.find((p: any) => p.which === "TEXT");
-
-      if (!textPart || !textPart.body) {
-        continue;
-      }
-      // //////////////////////////////////////////////////////////////////////////////////////// 1
+      if (!textPart || !textPart.body) continue;
 
       const headerBody: any = headerPart?.body || {};
 
-      // rawFromVal might be string, array, or something else
+      // --- Normalize FROM ---
       const rawFromVal = headerBody.from ?? headerBody.From ?? "";
       let rawFromStr = "";
-
       if (Array.isArray(rawFromVal)) {
         rawFromStr = rawFromVal[0] ?? "";
       } else if (typeof rawFromVal === "string") {
@@ -146,10 +134,9 @@ export async function pollInbox() {
         rawFromStr = String(rawFromVal ?? "");
       }
 
-      // subject can also be array or string
+      // --- Normalize SUBJECT ---
       const rawSubjectVal = headerBody.subject ?? headerBody.Subject ?? "";
       let rawSubjectStr = "";
-
       if (Array.isArray(rawSubjectVal)) {
         rawSubjectStr = rawSubjectVal[0] ?? "";
       } else if (typeof rawSubjectVal === "string") {
@@ -158,71 +145,51 @@ export async function pollInbox() {
         rawSubjectStr = String(rawSubjectVal ?? "");
       }
 
-      console.log("[pollInbox] RAW FROM VAL:", rawFromVal);
-      console.log("[pollInbox] RAW FROM STR:", rawFromStr);
-      console.log("[pollInbox] RAW SUBJECT STR:", rawSubjectStr);
-
       // Extract pure email from "Name <email>"
       let fromEmail = "";
       const m = rawFromStr.match(/<([^>]+)>/);
       if (m) {
-        fromEmail = m[1].trim(); // vendor@example.com
+        fromEmail = m[1].trim();
       } else {
-        fromEmail = rawFromStr.trim(); // maybe already just email
-      }
-
-      if (!fromEmail) {
-        console.log("[pollInbox] No fromEmail, skipping message");
-        continue;
+        fromEmail = rawFromStr.trim();
       }
 
       const subject = rawSubjectStr;
 
-
-      // //////////////////////////////////////////////////////////////////////////////////////////// 2
-
-      // if (m) {
-      //   fromEmail = m[1].trim();
-      // } else {
-      //   fromEmail = rawFrom.trim();
-      // }
-
-      // console.log("[pollInbox] RAW FROM:", rawFrom);
-      // console.log("[pollInbox] Parsed fromEmail:", fromEmail);
-      // console.log("[pollInbox] Subject:", rawSubject);
-      
-      // 🔍 FILTER #1: only keep emails from your Gmail (as "vendor")
+      // ✅ Filter 1: only messages from your Gmail (you act as vendor)
       if (fromEmail.toLowerCase() !== INBOUND_EMAIL_USER.toLowerCase()) {
-        // Ignore all GeeksforGeeks/Glassdoor/Swiggy/etc
         continue;
       }
 
-      // 🔍 FILTER #2: only keep subjects that contain "RFP "
-      if (!subject.includes("RFP ")) {
+      // ✅ Filter 2: only replies to RFP emails (ignore original "RFP ..." we sent out)
+      if (!/^Re:\s*RFP\s/i.test(subject)) {
         continue;
       }
-      console.log("[pollInbox] RAW FROM VAL:", rawFromVal);
+
+      // Now only the lines you care about get logged:
       console.log("[pollInbox] RAW FROM STR:", rawFromStr);
       console.log("[pollInbox] RAW SUBJECT STR:", rawSubjectStr);
 
-      if (!fromEmail) {
-        console.log("[pollInbox] No fromEmail, skipping message");
-        continue;
-      }
-
+      // Parse body text
       const parsed = await simpleParser(textPart.body);
       const body = parsed.text || parsed.html || "";
 
-      // Map to vendor
-      const vendor = await prisma.vendor.findFirst({
+      // --- Vendor mapping (auto-create if missing) ---
+      let vendor = await prisma.vendor.findFirst({
         where: { email: { equals: fromEmail, mode: "insensitive" } },
       });
+
       if (!vendor) {
-        console.log("[pollInbox] No vendor for:", fromEmail);
-        continue;
+        vendor = await prisma.vendor.create({
+          data: {
+            name: "Email Vendor - " + fromEmail,
+            email: fromEmail,
+          },
+        });
+        console.log("[pollInbox] Created new vendor for:", fromEmail);
       }
 
-      // Map subject -> RFP (RFP <id>)
+      // --- Map subject -> RFP using "RFP <id>" ---
       let rfp = null;
       const rfpIdMatch = subject.match(/RFP\s+([0-9a-fA-F-]+)/);
       if (rfpIdMatch) {
@@ -234,22 +201,14 @@ export async function pollInbox() {
       }
 
       if (!rfp) {
-        const cleaned = subject.replace(/^Re:\s*/i, "").trim();
-        rfp = await prisma.rfp.findFirst({
-          where: {
-            title: { contains: cleaned, mode: "insensitive" },
-          },
-          include: { items: true },
-        });
-      }
-
-      if (!rfp) {
         console.log("[pollInbox] No RFP found for subject:", subject);
         continue;
       }
 
+      // --- AI parse proposal ---
       const structured = await parseProposal(body, rfp);
 
+      // --- Upsert proposal so UI can show it ---
       await prisma.proposal.upsert({
         where: {
           rfp_id_vendor_id: {
