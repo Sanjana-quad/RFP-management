@@ -78,7 +78,7 @@ export async function pollInbox() {
     !INBOUND_EMAIL_PASS ||
     !INBOUND_EMAIL_HOST ||
     !INBOUND_EMAIL_PORT
-  ) {
+  ) { 
     throw new Error("Missing IMAP environment variables");
   }
 
@@ -174,7 +174,7 @@ export async function pollInbox() {
       const parsed = await simpleParser(textPart.body);
       const body = parsed.text || parsed.html || "";
 
-      // --- Vendor mapping (auto-create if missing) ---
+      // --- Vendor mapping ---
       let vendor = await prisma.vendor.findFirst({
         where: { email: { equals: fromEmail, mode: "insensitive" } },
       });
